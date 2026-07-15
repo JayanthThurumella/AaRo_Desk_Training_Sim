@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+:root {
+  --ink: #0E1420;
+  --paper: #F5F7FA;
+  --panel: #FFFFFF;
+  --line: #DCE1E8;
+  --muted: #5B6472;
+  --brand: #1B5E5B;
+  --brand-bright: #2E9E97;
+  --signal: #E8A33D;
+
+  --status-bot: #8B93A1;
+  --status-open: #E8A33D;
+  --status-assigned: #3D7FE8;
+  --status-active: #2E9E97;
+  --status-hold: #8B5CF6;
+  --status-escalated: #E5484D;
+  --status-pending: #3D7FE8;
+  --status-resolved: #1E8E5A;
+  --status-unresolved: #C2410C;
+  --status-cancelled: #8B93A1;
+  --status-abandoned: #6B7280;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono-data {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+/* signal-bar motif: used sparingly as a signature accent */
+.signal-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+.signal-bars span {
+  width: 3px;
+  background: currentColor;
+  border-radius: 1px;
+  animation: signal-pulse 1.4s ease-in-out infinite;
+}
+.signal-bars span:nth-child(1) { height: 40%; animation-delay: 0s; }
+.signal-bars span:nth-child(2) { height: 65%; animation-delay: 0.15s; }
+.signal-bars span:nth-child(3) { height: 100%; animation-delay: 0.3s; }
+.signal-bars span:nth-child(4) { height: 75%; animation-delay: 0.45s; }
+
+@keyframes signal-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-bars span { animation: none; opacity: 0.9; }
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+:focus-visible {
+  outline: 2px solid var(--brand-bright);
+  outline-offset: 2px;
+}
