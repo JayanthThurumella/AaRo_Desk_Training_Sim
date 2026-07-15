@@ -21,19 +21,19 @@ export default function CSATPrompt({ conversation, onDone }) {
   }
 
   return (
-    <div className="mx-auto max-w-sm px-4 py-10 text-center">
-      <div className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-6">
-        <h2 className="text-base font-semibold text-[var(--ink)]">How did we do?</h2>
+    <div className="mx-auto w-full max-w-lg">
+      <div className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-8 shadow-sm">
+        <h2 className="text-xl font-semibold text-[var(--ink)]">How did we do?</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
           Ticket {conversation.ticket_number} — rate your support experience.
         </p>
 
-        <div className="mt-5 flex justify-center gap-2">
+        <div className="mt-6 flex justify-center gap-3">
           {[1, 2, 3, 4, 5].map((n) => (
             <button
               key={n}
               onClick={() => setScore(n)}
-              className={`h-10 w-10 rounded-full border text-sm font-semibold transition ${
+              className={`h-12 w-12 rounded-full border text-base font-semibold transition ${
                 score === n
                   ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
                   : 'border-[var(--line)] text-[var(--ink)] hover:border-[var(--brand-bright)]'
@@ -43,19 +43,19 @@ export default function CSATPrompt({ conversation, onDone }) {
             </button>
           ))}
         </div>
-        <div className="mt-2 flex justify-between px-1 text-[11px] text-[var(--muted)]">
+        <div className="mt-2 flex justify-between px-2 text-xs text-[var(--muted)]">
           <span>Poor</span>
           <span>Excellent</span>
         </div>
 
-        <div className="mt-6 flex justify-center gap-3">
-          <button onClick={skip} disabled={working} className="text-sm font-medium text-[var(--muted)]">
+        <div className="mt-8 flex justify-center gap-4">
+          <button onClick={skip} disabled={working} className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
             Skip
           </button>
           <button
             onClick={submit}
             disabled={!score || working}
-            className="rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            className="rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-40 hover:bg-[var(--brand-bright)] transition-colors"
           >
             Submit rating
           </button>

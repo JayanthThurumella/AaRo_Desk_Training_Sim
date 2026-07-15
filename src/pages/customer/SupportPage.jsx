@@ -92,48 +92,50 @@ export default function SupportPage() {
 
   return (
     <div className="flex h-screen flex-col bg-[var(--paper)]">
-      <header className="flex items-center justify-between border-b border-[var(--line)] bg-[var(--panel)] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="signal-bars text-[var(--brand)]"><span></span><span></span><span></span><span></span></span>
-          <span className="text-sm font-bold text-[var(--ink)]">AaRo Support</span>
-        </div>
+      <header className="flex items-center justify-between border-b border-[var(--line)] bg-[var(--panel)] px-6 py-4 shadow-sm">
         <div className="flex items-center gap-3">
+          <span className="signal-bars text-[var(--brand)]"><span></span><span></span><span></span><span></span></span>
+          <span className="text-base font-bold text-[var(--ink)]">AaRo Support</span>
+        </div>
+        <div className="flex items-center gap-4">
           {conversation && <StatusBadge status={conversation.status} />}
-          <button onClick={signOut} className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]">
+          <button onClick={signOut} className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
             Sign out
           </button>
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">
-        {showCsatFor ? (
-          <CSATPrompt conversation={showCsatFor} onDone={() => { setShowCsatFor(null); setConversation(null) }} />
-        ) : !conversation ? (
-          <CategoryPicker categories={categories} onSelect={startTicket} busy={starting} />
-        ) : conversation.status === 'bot' ? (
-          <BotChat
-            conversation={conversation}
-            script={script}
-            onResolved={loadActiveTicket}
-            onEscalated={loadActiveTicket}
-          />
-        ) : (
-          <div className="flex h-full flex-col">
-            {QUEUE_COPY[conversation.status] && (
-              <div className="border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--brand)_6%,transparent)] px-4 py-2 text-center text-xs font-medium text-[var(--brand)]">
-                {QUEUE_COPY[conversation.status]}
-                {' · '}Ticket {conversation.ticket_number}
+      <main className="flex-1 overflow-auto bg-[var(--paper)]">
+        <div className="mx-auto w-full max-w-5xl px-4 md:px-8 py-6 md:py-10">
+          {showCsatFor ? (
+            <CSATPrompt conversation={showCsatFor} onDone={() => { setShowCsatFor(null); setConversation(null) }} />
+          ) : !conversation ? (
+            <CategoryPicker categories={categories} onSelect={startTicket} busy={starting} />
+          ) : conversation.status === 'bot' ? (
+            <BotChat
+              conversation={conversation}
+              script={script}
+              onResolved={loadActiveTicket}
+              onEscalated={loadActiveTicket}
+            />
+          ) : (
+            <div className="flex h-[calc(100vh-8rem)] flex-col rounded-xl border border-[var(--line)] bg-[var(--panel)] shadow-sm overflow-hidden">
+              {QUEUE_COPY[conversation.status] && (
+                <div className="border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--brand)_6%,transparent)] px-4 py-3 text-center text-sm font-medium text-[var(--brand)]">
+                  {QUEUE_COPY[conversation.status]}
+                  {' · '}Ticket {conversation.ticket_number}
+                </div>
+              )}
+              <div className="flex-1 overflow-hidden">
+                <ChatWindow
+                  conversationId={conversation.id}
+                  readOnly={false}
+                  emptyLabel="You're through to our support team — say hello!"
+                />
               </div>
-            )}
-            <div className="flex-1 overflow-hidden">
-              <ChatWindow
-                conversationId={conversation.id}
-                readOnly={false}
-                emptyLabel="You're through to our support team — say hello!"
-              />
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </main>
     </div>
   )
