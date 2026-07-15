@@ -43,7 +43,7 @@ export default function Login() {
           <span className="signal-bars text-[var(--brand)]"><span></span><span></span><span></span><span></span></span>
           <div className="flex items-center gap-2.5">
             
-            <h1 className="text-lg font-bold tracking-tight text-[var(--ink)]">Nexline Support Desk</h1>
+            <h1 className="text-lg font-bold tracking-tight text-[var(--ink)]">AaRo Support Desk</h1>
           </div>
           <p className="text-xs text-[var(--muted)] font-mono-data">Training Simulator</p>
         </div>
