@@ -35,20 +35,23 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--paper)] px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center gap-2.5">
-          <span className="signal-bars text-[var(--brand)]"><span></span><span></span><span></span><span></span></span>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-[var(--ink)]">Nexline Support Desk</h1>
-            <p className="text-xs text-[var(--muted)] font-mono-data">Training Simulator</p>
-          </div>
-        </div>
+        
 
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-6 shadow-sm">
+          {/* Centered header */}
+        <div className="mb-8 flex flex-col items-center gap-1">
+          <span className="signal-bars text-[var(--brand)]"><span></span><span></span><span></span><span></span></span>
+          <div className="flex items-center gap-2.5">
+            
+            <h1 className="text-lg font-bold tracking-tight text-[var(--ink)]">Nexline Support Desk</h1>
+          </div>
+          <p className="text-xs text-[var(--muted)] font-mono-data">Training Simulator</p>
+        </div>
           <form onSubmit={submit} className="space-y-3">
             <Field label="Email" type="email" value={email} onChange={setEmail} required />
             <Field label="Password" type="password" value={password} onChange={setPassword} required minLength={6} />
 
-            {error && <p className="text-sm text-[var(--status-escalated)]">{error}</p>}
+            {error && <p className="text-sm text-[var(--status-escalated)] text-center">{error}</p>}
 
             <button
               type="submit"
