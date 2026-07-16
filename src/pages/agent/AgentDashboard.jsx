@@ -95,7 +95,9 @@ export default function AgentDashboard() {
 
     if (shouldSetBusy || shouldSetAvailable) {
       const newStatus = shouldSetBusy ? 'busy' : 'available'
-      supabase.rpc('set_presence', { p_status: newStatus }).catch(console.error)
+      supabase.rpc('set_presence', { p_status: newStatus }).then(({ error }) => {
+        if (error) console.error(error)
+      })
     }
   }, [myTickets, profile])
 

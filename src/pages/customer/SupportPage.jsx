@@ -232,7 +232,7 @@ export default function SupportPage() {
                   onExitRequest={requestExit}
                 />
               ) : (
-                <QueuePanel conversation={selectedConversation} onExitRequest={requestExit} />
+                <QueuePanel conversation={selectedConversation} onExitRequest={requestExit} onReopened={upsertConversation} />
               )
             ) : (
               <EmptyState onNewChat={openNewChat} />
@@ -265,10 +265,28 @@ export default function SupportPage() {
   )
 }
 
-function QueuePanel({ conversation, onExitRequest }) {
+function QueuePanel({ conversation, onExitRequest, onReopened }) {
   const isActive = !TERMINAL.includes(conversation.status)
   // Queued but not yet picked up by an agent — show the animated waiting bubble.
   const isWaiting = conversation.status === 'open'
+  // Matches the backend's reopen_conversation() rule — 'cancelled' tickets can't be reopened.
+  const canReopen = ['resolved', 'unresolved', 'abandoned'].includes(conversation.status)
+  const [reopening, setReopening] = useState(false)
+  const [reopenError, setReopenError] = useState(null)
+
+  const handleReopen = async () => {
+    setReopening(true)
+    setReopenError(null)
+    const { data, error } = await supabase.rpc('reopen_conversation', {
+      p_conversation_id: conversation.id,
+    })
+    setReopening(false)
+    if (error) {
+      setReopenError(error.message)
+      return
+    }
+    onReopened(data)
+  }
 
   return (
     <div className="flex h-[calc(100vh-10rem)] flex-col rounded-xl border border-[var(--line)] bg-[var(--panel)] shadow-sm overflow-hidden">
@@ -282,14 +300,25 @@ function QueuePanel({ conversation, onExitRequest }) {
             <span className="font-medium text-[var(--muted)]">This conversation is closed.</span>
           )}
           <span className="text-[var(--muted)]"> · Ticket {conversation.ticket_number}</span>
+          {reopenError && <span className="ml-2 text-[var(--status-escalated)]">{reopenError}</span>}
         </div>
-        {isActive && (
+        {isActive ? (
           <button
             onClick={onExitRequest}
             className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-[var(--muted)] transition-colors hover:border-[var(--status-escalated)] hover:text-[var(--status-escalated)]"
           >
             Exit Chat
           </button>
+        ) : (
+          canReopen && (
+            <button
+              onClick={handleReopen}
+              disabled={reopening}
+              className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--brand-bright)] disabled:opacity-40"
+            >
+              {reopening ? 'Reopening…' : 'Reopen Ticket'}
+            </button>
+          )
         )}
       </div>
 

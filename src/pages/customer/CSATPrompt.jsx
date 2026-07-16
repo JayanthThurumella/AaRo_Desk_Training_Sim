@@ -4,19 +4,30 @@ import { supabase } from '../../lib/supabaseClient'
 export default function CSATPrompt({ conversation, onDone }) {
   const [score, setScore] = useState(null)
   const [working, setWorking] = useState(false)
+  const [error, setError] = useState(null)
 
   const submit = async () => {
     if (!score) return
     setWorking(true)
-    await supabase.rpc('submit_csat', { p_conversation_id: conversation.id, p_score: score })
+    setError(null)
+    const { error: err } = await supabase.rpc('submit_csat', { p_conversation_id: conversation.id, p_score: score })
     setWorking(false)
+    if (err) {
+      setError(err.message)
+      return
+    }
     onDone()
   }
 
   const skip = async () => {
     setWorking(true)
-    await supabase.rpc('skip_csat', { p_conversation_id: conversation.id })
+    setError(null)
+    const { error: err } = await supabase.rpc('skip_csat', { p_conversation_id: conversation.id })
     setWorking(false)
+    if (err) {
+      setError(err.message)
+      return
+    }
     onDone()
   }
 
@@ -47,6 +58,8 @@ export default function CSATPrompt({ conversation, onDone }) {
           <span>Poor</span>
           <span>Excellent</span>
         </div>
+
+        {error && <p className="mt-4 text-center text-xs text-[var(--status-escalated)]">{error}</p>}
 
         <div className="mt-8 flex justify-center gap-4">
           <button onClick={skip} disabled={working} className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors">

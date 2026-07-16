@@ -102,9 +102,13 @@ export default function SeniorDashboard() {
     const max = profile.max_concurrent_tickets || 3
     const currentStatus = profile.status
     if (currentStatus === 'available' && activeCount >= max) {
-      supabase.rpc('set_presence', { p_status: 'busy' }).catch(console.error)
+      supabase.rpc('set_presence', { p_status: 'busy' }).then(({ error }) => {
+        if (error) console.error(error)
+      })
     } else if (currentStatus === 'busy' && activeCount < max) {
-      supabase.rpc('set_presence', { p_status: 'available' }).catch(console.error)
+      supabase.rpc('set_presence', { p_status: 'available' }).then(({ error }) => {
+        if (error) console.error(error)
+      })
     }
   }, [myTickets, profile])
 
