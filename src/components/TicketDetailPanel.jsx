@@ -12,6 +12,7 @@ const CLOSED = ['resolved', 'unresolved', 'cancelled', 'abandoned']
 export default function TicketDetailPanel({ ticket, category, customer, onChanged, showQaReview = false }) {
   const [tab, setTab] = useState('chat')
   const [extraStats, setExtraStats] = useState({ transfers: 0, escalations: 0, qaScore: null })
+  const [showDetails, setShowDetails] = useState(true) // NEW: toggle for details
 
   useEffect(() => {
     if (!ticket || !CLOSED.includes(ticket.status)) {
@@ -51,8 +52,9 @@ export default function TicketDetailPanel({ ticket, category, customer, onChange
   const slaBreached = isSlaBreached(ticket, new Map([[category?.id, category]]))
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-[var(--line)] px-4 py-3">
+    <div className="flex h-full min-h-0 flex-col">
+      {/* HEADER – now includes a toggle button */}
+      <div className="shrink-0 border-b border-[var(--line)] px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -63,10 +65,23 @@ export default function TicketDetailPanel({ ticket, category, customer, onChange
               {customer?.full_name ?? 'Customer'} · {category?.name ?? 'Uncategorized'}
             </p>
           </div>
-          <StatusBadge status={ticket.status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={ticket.status} />
+            {/* Toggle button – only for closed tickets (or always if you prefer) */}
+            {CLOSED.includes(ticket.status) && (
+              <button
+                onClick={() => setShowDetails(!showDetails)}
+                className="text-[var(--muted)] hover:text-[var(--ink)] transition-colors p-1"
+                aria-label={showDetails ? 'Hide details' : 'Show details'}
+              >
+                {showDetails ? '▲' : '▼'}
+              </button>
+            )}
+          </div>
         </div>
 
-        {CLOSED.includes(ticket.status) && (
+        {/* Conditionally render stats */}
+        {CLOSED.includes(ticket.status) && showDetails && (
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono-data text-[var(--muted)]">
             <span>First Response: {formatDuration(firstResponseSeconds(ticket))}</span>
             <span>Claim Wait: {formatDuration(waitSeconds(ticket))}</span>
@@ -81,29 +96,32 @@ export default function TicketDetailPanel({ ticket, category, customer, onChange
             {ticket.reopened_count > 0 && <span>Reopened ×{ticket.reopened_count}</span>}
           </div>
         )}
+      </div>
 
-        <div className="flex border-b border-[var(--line)] text-sm font-medium">
-          <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')}>Chat</TabBtn>
-          <TabBtn active={tab === 'notes'} onClick={() => setTab('notes')}>Internal notes</TabBtn>
-          {showQaReview && CLOSED.includes(ticket.status) && (
-            <TabBtn active={tab === 'qa'} onClick={() => setTab('qa')}>QA review</TabBtn>
-          )}
-        </div>
+      {/* Tabs and content remain unchanged */}
+      <div className="flex shrink-0 border-b border-[var(--line)] text-sm font-medium">
+        <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')}>Chat</TabBtn>
+        <TabBtn active={tab === 'notes'} onClick={() => setTab('notes')}>Internal notes</TabBtn>
+        {showQaReview && CLOSED.includes(ticket.status) && (
+          <TabBtn active={tab === 'qa'} onClick={() => setTab('qa')}>QA review</TabBtn>
+        )}
+      </div>
 
-        <div className="flex-1 overflow-hidden overflow-y-auto">
-          {tab === 'chat' ? (
-            <ChatWindow
-              conversationId={ticket.id}
-              readOnly={CLOSED.includes(ticket.status)}
-              emptyLabel={CLOSED.includes(ticket.status) ? 'No messages were exchanged.' : 'Say hello to get started.'}
-            />
-          ) : tab === 'notes' ? (
-            <InternalNotes conversationId={ticket.id} />
-          ) : (
-            <QaReviewPanel ticket={ticket} />
-          )}
-        </div>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {tab === 'chat' ? (
+          <ChatWindow
+            conversationId={ticket.id}
+            readOnly={CLOSED.includes(ticket.status)}
+            emptyLabel={CLOSED.includes(ticket.status) ? 'No messages were exchanged.' : 'Say hello to get started.'}
+          />
+        ) : tab === 'notes' ? (
+          <InternalNotes conversationId={ticket.id} />
+        ) : (
+          <QaReviewPanel ticket={ticket} />
+        )}
+      </div>
 
+      <div className="shrink-0">
         <TicketActions ticket={ticket} onChanged={onChanged} />
       </div>
     </div>

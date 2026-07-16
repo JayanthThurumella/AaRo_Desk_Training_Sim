@@ -18,14 +18,18 @@ export default function TicketActions({ ticket, onChanged }) {
 
   useEffect(() => {
     if (dialog !== 'transfer') return
+    // Agent -> agent only. Senior agent -> senior agent or agent (senior<->senior sideways,
+    // or handing a ticket back down to an agent). Agent -> senior agent is deliberately not
+    // offered here — that's what Escalate is for.
+    const targetRoles = profile.role === 'senior_agent' ? ['agent', 'senior_agent'] : ['agent']
     supabase
       .from('profiles')
-      .select('id, full_name')
-      .eq('role', 'agent')
+      .select('id, full_name, role')
+      .in('role', targetRoles)
       .eq('status', 'available')
       .neq('id', profile.id)
       .then(({ data }) => setAgents(data ?? []))
-  }, [dialog, profile.id])
+  }, [dialog, profile.id, profile.role])
 
   const call = async (fn, args = {}) => {
     setError(null)
@@ -49,6 +53,9 @@ export default function TicketActions({ ticket, onChanged }) {
   }
 
   if (ticket.status === 'assigned' && mine) {
+    // A first_response_at already on the ticket means it didn't just come from the open
+    // queue — it was transferred to this agent, and the conversation already has history.
+    const wasTransferred = !!ticket.first_response_at
     return (
       <div className="border-t border-[var(--line)] p-3 flex gap-2">
         {error && <p className="text-xs text-[var(--status-escalated)]">{error}</p>}
@@ -58,7 +65,11 @@ export default function TicketActions({ ticket, onChanged }) {
         >
           Reject back to queue
         </button>
-        <p className="flex-1 self-center text-center text-xs text-[var(--muted)]">Send a message to start the conversation</p>
+        <p className="flex-1 self-center text-center text-xs text-[var(--muted)]">
+          {wasTransferred
+            ? 'This chat was transferred to you — send a message to continue it'
+            : 'Send a message to start the conversation'}
+        </p>
       </div>
     )
   }
@@ -151,6 +162,11 @@ export default function TicketActions({ ticket, onChanged }) {
               <label key={a.id} className="flex items-center gap-2 text-sm">
                 <input type="radio" name="transfer-target" checked={transferTarget === a.id} onChange={() => setTransferTarget(a.id)} />
                 {a.full_name}
+                {profile.role === 'senior_agent' && (
+                  <span className="text-xs text-[var(--muted)]">
+                    ({a.role === 'senior_agent' ? 'Senior Agent' : 'Agent'})
+                  </span>
+                )}
               </label>
             ))}
           </div>

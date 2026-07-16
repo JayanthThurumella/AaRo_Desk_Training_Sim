@@ -80,6 +80,21 @@ export default function SeniorDashboard() {
     return () => supabase.removeChannel(channel)
   }, [loadAll])
 
+  // Open-queue broadcast: a ticket entering/leaving the shared queue (claimed,
+  // rejected back, newly escalated to open, etc.) is pushed to everyone
+  // instantly via Realtime Broadcast — this is what makes a claim by another
+  // agent disappear from this queue live, no hard refresh needed. See
+  // supabase/5_realtime_queue_broadcast.sql for why postgres_changes alone
+  // isn't enough here (RLS hides the row the instant it's claimed, so other
+  // agents/seniors never get that postgres_changes event).
+  useEffect(() => {
+    const channel = supabase
+      .channel('agent-queue', { config: { private: false } })
+      .on('broadcast', { event: 'queue_change' }, () => loadAll())
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [loadAll])
+
   // Auto‑update presence (same logic as agent)
   useEffect(() => {
     if (!profile) return
@@ -132,7 +147,7 @@ export default function SeniorDashboard() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="flex w-72 flex-col border-r border-[var(--line)] bg-[var(--panel)]">
+        <aside className="flex w-120 flex-col border-r border-[var(--line)] bg-[var(--panel)]">
           <div className="flex border-b border-[var(--line)] text-xs font-medium">
             {['escalations', 'queue', 'mine', 'history', 'reports'].map((t) => (
               <button
