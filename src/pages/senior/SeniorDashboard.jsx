@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../contexts/AuthContext'
 import PresenceSwitcher from '../../components/PresenceSwitcher'
@@ -29,6 +29,9 @@ export default function SeniorDashboard() {
   const [customers, setCustomers] = useState({})
   const [selectedId, setSelectedId] = useState(null)
   const [tab, setTab] = useState('escalations')
+
+  // Track the last status automatically set by the effect
+  const lastAutoStatusRef = useRef(null)
 
   const loadAll = useCallback(async () => {
     if (!profile?.id) return
@@ -80,13 +83,7 @@ export default function SeniorDashboard() {
     return () => supabase.removeChannel(channel)
   }, [loadAll])
 
-  // Open-queue broadcast: a ticket entering/leaving the shared queue (claimed,
-  // rejected back, newly escalated to open, etc.) is pushed to everyone
-  // instantly via Realtime Broadcast — this is what makes a claim by another
-  // agent disappear from this queue live, no hard refresh needed. See
-  // supabase/5_realtime_queue_broadcast.sql for why postgres_changes alone
-  // isn't enough here (RLS hides the row the instant it's claimed, so other
-  // agents/seniors never get that postgres_changes event).
+  // Open-queue broadcast
   useEffect(() => {
     const channel = supabase
       .channel('agent-queue', { config: { private: false } })
@@ -95,19 +92,25 @@ export default function SeniorDashboard() {
     return () => supabase.removeChannel(channel)
   }, [loadAll])
 
-  // Auto‑update presence (same logic as agent)
+  // Auto‑update presence – only reverts if the busy status was auto‑set by this effect
   useEffect(() => {
     if (!profile) return
     const activeCount = myTickets.filter(t => ACTIVE_STATUSES.includes(t.status)).length
     const max = profile.max_concurrent_tickets || 3
     const currentStatus = profile.status
-    if (currentStatus === 'available' && activeCount >= max) {
+
+    const shouldSetBusy = currentStatus === 'available' && activeCount >= max
+    const shouldSetAvailable = currentStatus === 'busy' && activeCount < max && currentStatus === lastAutoStatusRef.current
+
+    if (shouldSetBusy) {
       supabase.rpc('set_presence', { p_status: 'busy' }).then(({ error }) => {
         if (error) console.error(error)
+        else lastAutoStatusRef.current = 'busy'
       })
-    } else if (currentStatus === 'busy' && activeCount < max) {
+    } else if (shouldSetAvailable) {
       supabase.rpc('set_presence', { p_status: 'available' }).then(({ error }) => {
         if (error) console.error(error)
+        else lastAutoStatusRef.current = 'available'
       })
     }
   }, [myTickets, profile])

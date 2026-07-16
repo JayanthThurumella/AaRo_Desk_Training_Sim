@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../contexts/AuthContext'
 import PresenceSwitcher from '../../components/PresenceSwitcher'
@@ -28,7 +28,9 @@ export default function AgentDashboard() {
   const [customers, setCustomers] = useState({})
   const [selectedId, setSelectedId] = useState(null)
   const [tab, setTab] = useState('queue')
-  const [statusUpdated, setStatusUpdated] = useState(false)
+
+  // Track the last status automatically set by the effect
+  const lastAutoStatusRef = useRef(null)
 
   const loadAll = useCallback(async () => {
     if (!profile?.id) return
@@ -68,13 +70,7 @@ export default function AgentDashboard() {
     return () => supabase.removeChannel(channel)
   }, [loadAll])
 
-  // Open-queue broadcast: a ticket entering/leaving the shared queue (claimed,
-  // rejected back, newly escalated to open, etc.) is pushed to every agent
-  // instantly via Realtime Broadcast — this is what makes a claim by another
-  // agent disappear from this queue live, no hard refresh needed. See
-  // supabase/5_realtime_queue_broadcast.sql for why postgres_changes alone
-  // isn't enough here (RLS hides the row from other agents the instant it's
-  // claimed, so they never get that postgres_changes event).
+  // Open-queue broadcast
   useEffect(() => {
     const channel = supabase
       .channel('agent-queue', { config: { private: false } })
@@ -83,7 +79,7 @@ export default function AgentDashboard() {
     return () => supabase.removeChannel(channel)
   }, [loadAll])
 
-  // Auto‑update agent availability based on active ticket count
+  // Auto‑update presence – only reverts if the busy status was auto‑set by this effect
   useEffect(() => {
     if (!profile) return
     const activeCount = myTickets.filter(t => ACTIVE_STATUSES.includes(t.status)).length
@@ -91,12 +87,18 @@ export default function AgentDashboard() {
     const currentStatus = profile.status
 
     const shouldSetBusy = currentStatus === 'available' && activeCount >= max
-    const shouldSetAvailable = currentStatus === 'busy' && activeCount < max
+    // Auto‑revert to available only if currentStatus is busy AND it was set by this effect
+    const shouldSetAvailable = currentStatus === 'busy' && activeCount < max && currentStatus === lastAutoStatusRef.current
 
-    if (shouldSetBusy || shouldSetAvailable) {
-      const newStatus = shouldSetBusy ? 'busy' : 'available'
-      supabase.rpc('set_presence', { p_status: newStatus }).then(({ error }) => {
+    if (shouldSetBusy) {
+      supabase.rpc('set_presence', { p_status: 'busy' }).then(({ error }) => {
         if (error) console.error(error)
+        else lastAutoStatusRef.current = 'busy'
+      })
+    } else if (shouldSetAvailable) {
+      supabase.rpc('set_presence', { p_status: 'available' }).then(({ error }) => {
+        if (error) console.error(error)
+        else lastAutoStatusRef.current = 'available'
       })
     }
   }, [myTickets, profile])
@@ -170,7 +172,7 @@ export default function AgentDashboard() {
                   canClaim
                   onClaimed={(id) => {
                     loadAll()
-                    setSelectedId(id)  // auto‑open the claimed ticket
+                    setSelectedId(id)
                   }}
                   selectedId={selectedId}
                   onSelect={(t) => setSelectedId(t.id)}
