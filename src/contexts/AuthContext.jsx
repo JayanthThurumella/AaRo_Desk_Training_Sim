@@ -32,9 +32,22 @@ export function AuthProvider({ children }) {
       setLoading(false)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       setSession(newSession)
       await loadProfile(newSession?.user?.id)
+      // Only on an explicit sign-in (not on INITIAL_SESSION/refresh from an
+      // already-open tab) do we flip presence to available.
+      if (event === 'SIGNED_IN') {
+        try {
+          await supabase.rpc('set_presence', { p_status: 'available' })
+          // Realtime subscription for this session isn't attached yet at this
+          // point (it's set up in a separate effect that fires after this
+          // handler returns), so re-fetch rather than waiting on the channel.
+          await loadProfile(newSession?.user?.id)
+        } catch (e) {
+          console.error('Failed to set available presence on sign-in', e)
+        }
+      }
     })
 
     return () => {
@@ -73,15 +86,13 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signOut = useCallback(async () => {
-    if (profile?.role && profile.role !== 'customer') {
-      try {
-        await supabase.rpc('set_presence', { p_status: 'offline' })
-      } catch (e) {
-        console.error('Failed to set offline presence on sign-out', e)
-      }
+    try {
+      await supabase.rpc('set_presence', { p_status: 'offline' })
+    } catch (e) {
+      console.error('Failed to set offline presence on sign-out', e)
     }
     await supabase.auth.signOut()
-  }, [profile?.role])
+  }, [])
 
   const value = {
     session,

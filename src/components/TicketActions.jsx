@@ -11,6 +11,7 @@ export default function TicketActions({ ticket, onChanged }) {
   const [agents, setAgents] = useState([])
   const [transferTarget, setTransferTarget] = useState(null)
   const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
 
   const mine = ticket.agent_id === profile.id
   const isMyEscalation = ticket.escalated_to === profile.id
@@ -31,11 +32,19 @@ export default function TicketActions({ ticket, onChanged }) {
       .then(({ data }) => setAgents(data ?? []))
   }, [dialog, profile.id, profile.role])
 
+  // Guard against double-submits: while a request is in flight, ignore
+  // further clicks instead of letting a second RPC race the first one
+  // against a ticket status that's already changed underneath it.
+  useEffect(() => { setBusy(false) }, [ticket.id])
+
   const call = async (fn, args = {}) => {
+    if (busy) return
+    setBusy(true)
     setError(null)
     const { error: err } = await supabase.rpc(fn, args)
     if (err) setError(err.message)
     else onChanged?.()
+    setBusy(false)
   }
 
   if (CLOSED.includes(ticket.status)) {
@@ -44,7 +53,8 @@ export default function TicketActions({ ticket, onChanged }) {
         {error && <p className="mb-2 text-xs text-[var(--status-escalated)]">{error}</p>}
         <button
           onClick={() => call('reopen_conversation', { p_conversation_id: ticket.id })}
-          className="w-full rounded-lg border border-[var(--line)] py-2 text-sm font-medium text-[var(--ink)] hover:border-[var(--brand-bright)]"
+          disabled={busy}
+          className="w-full rounded-lg border border-[var(--line)] py-2 text-sm font-medium text-[var(--ink)] hover:border-[var(--brand-bright)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reopen ticket
         </button>
@@ -61,7 +71,8 @@ export default function TicketActions({ ticket, onChanged }) {
         {error && <p className="text-xs text-[var(--status-escalated)]">{error}</p>}
         <button
           onClick={() => call('reject_conversation', { p_conversation_id: ticket.id })}
-          className="flex-1 rounded-lg border border-[var(--line)] py-2 text-sm font-medium text-[var(--muted)] hover:border-[var(--status-escalated)] hover:text-[var(--status-escalated)]"
+          disabled={busy}
+          className="flex-1 rounded-lg border border-[var(--line)] py-2 text-sm font-medium text-[var(--muted)] hover:border-[var(--status-escalated)] hover:text-[var(--status-escalated)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reject back to queue
         </button>
@@ -80,7 +91,8 @@ export default function TicketActions({ ticket, onChanged }) {
         {profile.role === 'senior_agent' && (
           <button
             onClick={() => call('take_ownership', { p_conversation_id: ticket.id })}
-            className="w-full rounded-lg bg-[var(--brand)] py-2 text-sm font-semibold text-white"
+            disabled={busy}
+            className="w-full rounded-lg bg-[var(--brand)] py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             Take ownership
           </button>
@@ -97,30 +109,30 @@ export default function TicketActions({ ticket, onChanged }) {
 
       <div className="flex flex-wrap gap-2">
         {ticket.status === 'active' && (
-          <ActionBtn onClick={() => call('hold_conversation', { p_conversation_id: ticket.id })}>Hold</ActionBtn>
+          <ActionBtn onClick={() => call('hold_conversation', { p_conversation_id: ticket.id })} disabled={busy}>Hold</ActionBtn>
         )}
         {ticket.status === 'on_hold' && (
-          <ActionBtn onClick={() => call('resume_conversation', { p_conversation_id: ticket.id })} primary>Resume</ActionBtn>
+          <ActionBtn onClick={() => call('resume_conversation', { p_conversation_id: ticket.id })} primary disabled={busy}>Resume</ActionBtn>
         )}
         {ticket.status === 'active' && ticket.first_response_at && (
-          <ActionBtn onClick={() => call('set_pending', { p_conversation_id: ticket.id })}>Awaiting customer</ActionBtn>
+          <ActionBtn onClick={() => call('set_pending', { p_conversation_id: ticket.id })} disabled={busy}>Awaiting customer</ActionBtn>
         )}
         {isMyEscalation && ticket.original_agent_id && (
-          <ActionBtn onClick={() => call('return_escalation', { p_conversation_id: ticket.id })}>Return to {' '}original agent</ActionBtn>
+          <ActionBtn onClick={() => call('return_escalation', { p_conversation_id: ticket.id })} disabled={busy}>Return to {' '}original agent</ActionBtn>
         )}
         {mine && ['active', 'on_hold'].includes(ticket.status) && (
-          <ActionBtn onClick={() => setDialog('escalate')} tone="warn">Escalate</ActionBtn>
+          <ActionBtn onClick={() => setDialog('escalate')} tone="warn" disabled={busy}>Escalate</ActionBtn>
         )}
         {['active', 'on_hold', 'pending'].includes(ticket.status) && (
-          <ActionBtn onClick={() => setDialog('transfer')}>Transfer</ActionBtn>
+          <ActionBtn onClick={() => setDialog('transfer')} disabled={busy}>Transfer</ActionBtn>
         )}
         {ticket.first_response_at && (
           <>
-            <ActionBtn onClick={() => setDialog('close_resolved')} tone="success">Resolve</ActionBtn>
-            <ActionBtn onClick={() => setDialog('close_unresolved')} tone="warn">Close unresolved</ActionBtn>
+            <ActionBtn onClick={() => setDialog('close_resolved')} tone="success" disabled={busy}>Resolve</ActionBtn>
+            <ActionBtn onClick={() => setDialog('close_unresolved')} tone="warn" disabled={busy}>Close unresolved</ActionBtn>
           </>
         )}
-        <ActionBtn onClick={() => setDialog('close_cancelled')} tone="muted">Cancel ticket</ActionBtn>
+        <ActionBtn onClick={() => setDialog('close_cancelled')} tone="muted" disabled={busy}>Cancel ticket</ActionBtn>
       </div>
 
       <ConfirmDialog
@@ -213,7 +225,7 @@ export default function TicketActions({ ticket, onChanged }) {
   )
 }
 
-function ActionBtn({ children, onClick, tone, primary }) {
+function ActionBtn({ children, onClick, tone, primary, disabled }) {
   const toneClasses = {
     warn: 'border-[var(--status-hold)] text-[var(--status-hold)] hover:bg-[var(--status-hold)] hover:text-white',
     success: 'border-[var(--status-resolved)] text-[var(--status-resolved)] hover:bg-[var(--status-resolved)] hover:text-white',
@@ -222,7 +234,8 @@ function ActionBtn({ children, onClick, tone, primary }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+      disabled={disabled}
+      className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${
         primary
           ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
           : toneClasses[tone] ?? 'border-[var(--line)] text-[var(--ink)] hover:border-[var(--brand-bright)]'
