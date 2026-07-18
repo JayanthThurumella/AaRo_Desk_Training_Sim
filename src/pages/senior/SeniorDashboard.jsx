@@ -1,9 +1,8 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../contexts/AuthContext'
 import PresenceSwitcher from '../../components/PresenceSwitcher'
 import NotificationsBell from '../../components/NotificationsBell'
-import QueueList from '../../components/QueueList'
 import MyTicketsList from '../../components/MyTicketsList'
 import TicketDetailPanel from '../../components/TicketDetailPanel'
 import TicketHistoryList from '../../components/TicketHistoryList'
@@ -21,7 +20,6 @@ const CLOSED_STATUSES = ['resolved', 'unresolved', 'cancelled', 'abandoned']
 export default function SeniorDashboard() {
   const { profile, signOut } = useAuth()
   const [categories, setCategories] = useState([])
-  const [queue, setQueue] = useState([])
   const [escalations, setEscalations] = useState([])
   const [myTickets, setMyTickets] = useState([])
   const [history, setHistory] = useState([])
@@ -29,12 +27,27 @@ export default function SeniorDashboard() {
   const [customers, setCustomers] = useState({})
   const [selectedId, setSelectedId] = useState(null)
   const [tab, setTab] = useState('escalations')
+  // New-message-arrived indicator per conversation id, cleared once opened.
+  const [unreadIds, setUnreadIds] = useState(() => new Set())
+  const selectedIdRef = useRef(null)
+  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
 
+  const clearUnread = useCallback((id) => {
+    setUnreadIds((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }, [])
+
+  // Senior Agent Queue: seniors only see and manage escalated tickets, not
+  // the general open queue — so this dashboard no longer fetches or shows
+  // the shared 'open' queue at all.
   const loadAll = useCallback(async () => {
     if (!profile?.id) return
-    const [{ data: cats }, { data: q }, { data: esc }, { data: mine }, { data: hist }, { data: closed }] = await Promise.all([
+    const [{ data: cats }, { data: esc }, { data: mine }, { data: hist }, { data: closed }] = await Promise.all([
       supabase.from('issue_categories').select('*'),
-      supabase.from('conversations').select('*').eq('status', 'open').order('started_at', { ascending: true }),
       supabase.from('conversations').select('*').eq('status', 'escalated').order('started_at', { ascending: true }),
       supabase
         .from('conversations')
@@ -57,13 +70,12 @@ export default function SeniorDashboard() {
         .limit(200),
     ])
     setCategories(cats ?? [])
-    setQueue(q ?? [])
     setEscalations(esc ?? [])
     setMyTickets(mine ?? [])
     setHistory(hist ?? [])
     setTeamClosedToday(closed ?? [])
 
-    const ids = new Set([...(q ?? []), ...(esc ?? []), ...(mine ?? []), ...(hist ?? []), ...(closed ?? [])].map((t) => t.client_id))
+    const ids = new Set([...(esc ?? []), ...(mine ?? []), ...(hist ?? []), ...(closed ?? [])].map((t) => t.client_id))
     if (ids.size > 0) {
       const { data: people } = await supabase.from('profiles').select('id, full_name').in('id', Array.from(ids))
       setCustomers(Object.fromEntries((people ?? []).map((p) => [p.id, p])))
@@ -71,6 +83,27 @@ export default function SeniorDashboard() {
   }, [profile?.id])
 
   useEffect(() => { loadAll() }, [loadAll])
+
+  // Unread badge: any new message on a ticket that isn't the one currently
+  // open marks that ticket unread in the sidebar, until selected.
+  useEffect(() => {
+    if (!profile?.id) return
+    const channel = supabase
+      .channel(`messages-unread-${profile.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const m = payload.new
+        if (m.sender_id === profile.id) return
+        if (m.conversation_id === selectedIdRef.current) return
+        setUnreadIds((prev) => {
+          if (prev.has(m.conversation_id)) return prev
+          const next = new Set(prev)
+          next.add(m.conversation_id)
+          return next
+        })
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [profile?.id])
 
   useEffect(() => {
     const channel = supabase
@@ -113,8 +146,8 @@ export default function SeniorDashboard() {
   }, [myTickets, profile])
 
   const allVisible = useMemo(
-    () => [...queue, ...escalations, ...myTickets, ...history, ...teamClosedToday],
-    [queue, escalations, myTickets, history, teamClosedToday]
+    () => [...escalations, ...myTickets, ...history, ...teamClosedToday],
+    [escalations, myTickets, history, teamClosedToday]
   )
   const selected = allVisible.find((t) => t.id === selectedId) ?? null
   const category = categories.find((c) => c.id === selected?.category_id)
@@ -153,7 +186,7 @@ export default function SeniorDashboard() {
       <div className="flex flex-1 overflow-hidden">
         <aside className="flex w-120 flex-col border-r border-[var(--line)] bg-[var(--panel)]">
           <div className="flex border-b border-[var(--line)] text-xs font-medium">
-            {['escalations', 'queue', 'mine', 'history', 'reports'].map((t) => (
+            {['escalations', 'mine', 'history', 'reports'].map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -162,7 +195,6 @@ export default function SeniorDashboard() {
                 }`}
               >
                 {t === 'mine' ? `Mine (${myTickets.length})` :
-                 t === 'queue' ? `Queue (${queue.length})` :
                  t === 'escalations' ? `Escalations (${escalations.length})` :
                  t === 'history' ? `History (${history.length})` :
                  'Reports'}
@@ -175,34 +207,16 @@ export default function SeniorDashboard() {
                 tickets={escalations}
                 categories={categories}
                 selectedId={selectedId}
-                onSelect={(t) => setSelectedId(t.id)}
+                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
               />
-            )}
-            {tab === 'queue' && (
-              profile.status !== 'available' ? (
-                <p className="px-4 py-6 text-center text-sm text-[var(--muted)]">
-                  Set your status to <strong>Available</strong> to see and claim queued tickets.
-                </p>
-              ) : (
-                <QueueList
-                  tickets={queue}
-                  categories={categories}
-                  canClaim
-                  onClaimed={(id) => {
-                    loadAll()
-                    setSelectedId(id)
-                  }}
-                  selectedId={selectedId}
-                  onSelect={(t) => setSelectedId(t.id)}
-                />
-              )
             )}
             {tab === 'mine' && (
               <MyTicketsList
                 tickets={myTickets}
                 categories={categories}
                 selectedId={selectedId}
-                onSelect={(t) => setSelectedId(t.id)}
+                unreadIds={unreadIds}
+                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'history' && (
@@ -210,7 +224,7 @@ export default function SeniorDashboard() {
                 tickets={history}
                 categories={categories}
                 selectedId={selectedId}
-                onSelect={(t) => setSelectedId(t.id)}
+                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'reports' && (

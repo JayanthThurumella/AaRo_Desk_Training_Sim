@@ -149,6 +149,12 @@ export default function SupportPage() {
         })
         if (error) throw error
         upsertConversation(data)
+        // Show the rating dialog immediately on exit, rather than waiting on
+        // the realtime UPDATE round-trip — covers the case where the agent
+        // had already resolved the chat and the customer is now leaving.
+        if (data && TERMINAL.includes(data.status) && !data.csat_prompted) {
+          setShowCsatFor(data)
+        }
       }
     } catch (e) {
       setConfirmError(e.message)
@@ -232,7 +238,12 @@ export default function SupportPage() {
                   onExitRequest={requestExit}
                 />
               ) : (
-                <QueuePanel conversation={selectedConversation} onExitRequest={requestExit} onReopened={upsertConversation} />
+                <QueuePanel
+                  conversation={selectedConversation}
+                  onExitRequest={requestExit}
+                  onReopened={upsertConversation}
+                  onOpenConversation={handleSelectConversation}
+                />
               )
             ) : (
               <EmptyState onNewChat={openNewChat} />
@@ -265,19 +276,23 @@ export default function SupportPage() {
   )
 }
 
-function QueuePanel({ conversation, onExitRequest, onReopened }) {
+function QueuePanel({ conversation, onExitRequest, onReopened, onOpenConversation }) {
   const isActive = !TERMINAL.includes(conversation.status)
   // Queued but not yet picked up by an agent — show the animated waiting bubble.
   const isWaiting = conversation.status === 'open'
-  // Matches the backend's reopen_conversation() rule — 'cancelled' tickets can't be reopened.
+  // Matches the backend's reopen rule — 'cancelled' tickets can't be reopened.
   const canReopen = ['resolved', 'unresolved', 'abandoned'].includes(conversation.status)
   const [reopening, setReopening] = useState(false)
   const [reopenError, setReopenError] = useState(null)
 
+  // Reopening a resolved ticket starts a brand-new chat session (new ticket
+  // number, straight into the agent queue) instead of resurrecting this one.
+  // This conversation's history stays exactly as it was — untouched, and
+  // browsable read-only below — while the new session carries the follow-up.
   const handleReopen = async () => {
     setReopening(true)
     setReopenError(null)
-    const { data, error } = await supabase.rpc('reopen_conversation', {
+    const { data, error } = await supabase.rpc('reopen_ticket_new_session', {
       p_conversation_id: conversation.id,
     })
     setReopening(false)
@@ -286,6 +301,7 @@ function QueuePanel({ conversation, onExitRequest, onReopened }) {
       return
     }
     onReopened(data)
+    onOpenConversation?.(data)
   }
 
   return (
@@ -300,6 +316,14 @@ function QueuePanel({ conversation, onExitRequest, onReopened }) {
             <span className="font-medium text-[var(--muted)]">This conversation is closed.</span>
           )}
           <span className="text-[var(--muted)]"> · Ticket {conversation.ticket_number}</span>
+          {conversation.parent_conversation_id && (
+            <button
+              onClick={() => onOpenConversation?.({ id: conversation.parent_conversation_id })}
+              className="ml-2 text-[var(--brand)] hover:underline"
+            >
+              View previous conversation
+            </button>
+          )}
           {reopenError && <span className="ml-2 text-[var(--status-escalated)]">{reopenError}</span>}
         </div>
         {isActive ? (

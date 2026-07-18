@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../contexts/AuthContext'
 import PresenceSwitcher from '../../components/PresenceSwitcher'
@@ -24,18 +24,50 @@ export default function AgentDashboard() {
   const [queue, setQueue] = useState([])
   const [myTickets, setMyTickets] = useState([])
   const [history, setHistory] = useState([])
+  // Escalation ownership: tickets this agent originally owned but whose
+  // senior-agent claim (take_ownership) has fully taken over — agent_id is
+  // still this agent for record-keeping, but escalated_to now points to a
+  // different (senior) agent. These are read-only for this agent and shown
+  // under History, not under active "mine" tickets.
+  const [handedOff, setHandedOff] = useState([])
   const [closedToday, setClosedToday] = useState([])
   const [customers, setCustomers] = useState({})
   const [selectedId, setSelectedId] = useState(null)
   const [tab, setTab] = useState('queue')
   const [statusUpdated, setStatusUpdated] = useState(false)
+  // New-message-arrived indicator per conversation id, shown as a badge in
+  // the sidebar lists while a ticket isn't the one currently open.
+  const [unreadIds, setUnreadIds] = useState(() => new Set())
+  const selectedIdRef = useRef(null)
+  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+
+  const clearUnread = useCallback((id) => {
+    setUnreadIds((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }, [])
 
   const loadAll = useCallback(async () => {
     if (!profile?.id) return
-    const [{ data: cats }, { data: q }, { data: mine }, { data: hist }, { data: closed }] = await Promise.all([
+    const [{ data: cats }, { data: q }, { data: mine }, { data: handed }, { data: hist }, { data: closed }] = await Promise.all([
       supabase.from('issue_categories').select('*'),
       supabase.from('conversations').select('*').eq('status', 'open').order('started_at', { ascending: true }),
-      supabase.from('conversations').select('*').eq('agent_id', profile.id).in('status', ACTIVE_STATUSES),
+      supabase
+        .from('conversations')
+        .select('*')
+        .eq('agent_id', profile.id)
+        .in('status', ACTIVE_STATUSES)
+        .or(`escalated_to.is.null,escalated_to.eq.${profile.id}`),
+      supabase
+        .from('conversations')
+        .select('*')
+        .eq('agent_id', profile.id)
+        .not('escalated_to', 'is', null)
+        .neq('escalated_to', profile.id)
+        .order('updated_at', { ascending: false }),
       supabase.from('conversations').select('*').eq('agent_id', profile.id).in('status', CLOSED_STATUSES).order('closed_at', { ascending: false }).limit(100),
       supabase
         .from('conversations')
@@ -47,10 +79,11 @@ export default function AgentDashboard() {
     setCategories(cats ?? [])
     setQueue(q ?? [])
     setMyTickets(mine ?? [])
+    setHandedOff(handed ?? [])
     setHistory(hist ?? [])
     setClosedToday(closed ?? [])
 
-    const ids = new Set([...(q ?? []), ...(mine ?? []), ...(hist ?? []), ...(closed ?? [])].map((t) => t.client_id))
+    const ids = new Set([...(q ?? []), ...(mine ?? []), ...(handed ?? []), ...(hist ?? []), ...(closed ?? [])].map((t) => t.client_id))
     if (ids.size > 0) {
       const { data: people } = await supabase.from('profiles').select('id, full_name').in('id', Array.from(ids))
       setCustomers(Object.fromEntries((people ?? []).map((p) => [p.id, p])))
@@ -58,6 +91,27 @@ export default function AgentDashboard() {
   }, [profile?.id])
 
   useEffect(() => { loadAll() }, [loadAll])
+
+  // Unread badge: any new message on a ticket that isn't the one currently
+  // open marks that ticket unread in the sidebar, until the agent selects it.
+  useEffect(() => {
+    if (!profile?.id) return
+    const channel = supabase
+      .channel(`messages-unread-${profile.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const m = payload.new
+        if (m.sender_id === profile.id) return
+        if (m.conversation_id === selectedIdRef.current) return
+        setUnreadIds((prev) => {
+          if (prev.has(m.conversation_id)) return prev
+          const next = new Set(prev)
+          next.add(m.conversation_id)
+          return next
+        })
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [profile?.id])
 
   // Realtime subscription for conversations
   useEffect(() => {
@@ -101,9 +155,16 @@ export default function AgentDashboard() {
     }
   }, [myTickets, profile])
 
+  // History tab shows both truly-closed tickets and tickets handed off
+  // completely to a senior agent after escalation (§ Escalation Ownership).
+  const historyTickets = useMemo(
+    () => [...history, ...handedOff].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)),
+    [history, handedOff]
+  )
+
   const selected = useMemo(
-    () => [...queue, ...myTickets, ...history, ...closedToday].find((t) => t.id === selectedId) ?? null,
-    [queue, myTickets, history, closedToday, selectedId]
+    () => [...queue, ...myTickets, ...historyTickets, ...closedToday].find((t) => t.id === selectedId) ?? null,
+    [queue, myTickets, historyTickets, closedToday, selectedId]
   )
   const category = categories.find((c) => c.id === selected?.category_id)
   const customer = customers[selected?.client_id]
@@ -152,7 +213,7 @@ export default function AgentDashboard() {
               >
                 {t === 'mine' ? `My tickets (${myTickets.length})` :
                  t === 'queue' ? `Queue (${queue.length})` :
-                 t === 'history' ? `History (${history.length})` :
+                 t === 'history' ? `History (${historyTickets.length})` :
                  'Reports'}
               </button>
             ))}
@@ -171,9 +232,10 @@ export default function AgentDashboard() {
                   onClaimed={(id) => {
                     loadAll()
                     setSelectedId(id)  // auto‑open the claimed ticket
+                    clearUnread(id)
                   }}
                   selectedId={selectedId}
-                  onSelect={(t) => setSelectedId(t.id)}
+                  onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
                 />
               )
             )}
@@ -182,15 +244,16 @@ export default function AgentDashboard() {
                 tickets={myTickets}
                 categories={categories}
                 selectedId={selectedId}
-                onSelect={(t) => setSelectedId(t.id)}
+                unreadIds={unreadIds}
+                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'history' && (
               <TicketHistoryList
-                tickets={history}
+                tickets={historyTickets}
                 categories={categories}
                 selectedId={selectedId}
-                onSelect={(t) => setSelectedId(t.id)}
+                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'reports' && (

@@ -6,10 +6,12 @@ import QaReviewPanel from './QaReviewPanel'
 import StatusBadge, { PriorityBadge } from './StatusBadge'
 import { formatDuration, handleTimeSeconds, firstResponseSeconds, waitSeconds, resolutionSeconds, isSlaBreached } from '../utils/kpi'
 import { supabase } from '../lib/supabaseClient'
+import { useAuth } from '../contexts/AuthContext'
 
 const CLOSED = ['resolved', 'unresolved', 'cancelled', 'abandoned']
 
 export default function TicketDetailPanel({ ticket, category, customer, onChanged, showQaReview = false }) {
+  const { profile } = useAuth()
   const [tab, setTab] = useState('chat')
   const [extraStats, setExtraStats] = useState({ transfers: 0, escalations: 0, qaScore: null })
   const [showDetails, setShowDetails] = useState(true) // NEW: toggle for details
@@ -50,6 +52,17 @@ export default function TicketDetailPanel({ ticket, category, customer, onChange
   }
 
   const slaBreached = isSlaBreached(ticket, new Map([[category?.id, category]]))
+
+  // Escalation ownership: once a senior agent has claimed this ticket
+  // (escalated_to set to someone other than the original agent), the
+  // original agent's copy becomes fully read-only — chat input disabled,
+  // no ticket actions — ownership has moved entirely to the senior agent.
+  const isHandedOff = !!(
+    ticket.escalated_to &&
+    ticket.escalated_to !== profile.id &&
+    ticket.agent_id === profile.id &&
+    profile.role === 'agent'
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -111,7 +124,7 @@ export default function TicketDetailPanel({ ticket, category, customer, onChange
         {tab === 'chat' ? (
           <ChatWindow
             conversationId={ticket.id}
-            readOnly={CLOSED.includes(ticket.status)}
+            readOnly={CLOSED.includes(ticket.status) || isHandedOff}
             emptyLabel={CLOSED.includes(ticket.status) ? 'No messages were exchanged.' : 'Say hello to get started.'}
           />
         ) : tab === 'notes' ? (
@@ -122,7 +135,7 @@ export default function TicketDetailPanel({ ticket, category, customer, onChange
       </div>
 
       <div className="shrink-0">
-        <TicketActions ticket={ticket} onChanged={onChanged} />
+        {!isHandedOff && <TicketActions ticket={ticket} onChanged={onChanged} />}
       </div>
     </div>
   )
