@@ -94,12 +94,17 @@ export default function AgentDashboard() {
 
   // Unread badge: any new message on a ticket that isn't the one currently
   // open marks that ticket unread in the sidebar, until the agent selects it.
+  // Uses the 'ticket-messages' broadcast (not postgres_changes on `messages`)
+  // because messages_select is a cross-table EXISTS(...conversations...)
+  // check, which Realtime doesn't reliably evaluate for postgres_changes —
+  // see supabase/9_message_broadcast.sql for the full explanation (same
+  // class of issue as the open-queue broadcast in file 5).
   useEffect(() => {
     if (!profile?.id) return
     const channel = supabase
-      .channel(`messages-unread-${profile.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        const m = payload.new
+      .channel('ticket-messages', { config: { private: false } })
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+        const m = payload.payload
         if (m.sender_id === profile.id) return
         if (m.conversation_id === selectedIdRef.current) return
         setUnreadIds((prev) => {
