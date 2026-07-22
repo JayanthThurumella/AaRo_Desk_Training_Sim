@@ -4,12 +4,13 @@ import { useAuth } from '../../contexts/AuthContext'
 import PresenceSwitcher from '../../components/PresenceSwitcher'
 import NotificationsBell from '../../components/NotificationsBell'
 import MyTicketsList from '../../components/MyTicketsList'
-import TicketDetailPanel from '../../components/TicketDetailPanel'
 import TicketHistoryList from '../../components/TicketHistoryList'
 import PerformanceReports from '../../components/PerformanceReports'
 import KpiStrip from '../../components/KpiStrip'
 import StatusBadge, { PriorityBadge } from '../../components/StatusBadge'
 import KpiHelpButton from '../../components/KpiHelpButton'
+import ChatWorkspace from '../../components/ChatWorkspace'
+import useChatWindows from '../../hooks/useChatWindows'
 import {
   averageHandleTime, escalationRate, averageCsat, formatDuration, formatPercent, isActiveWork,
 } from '../../utils/kpi'
@@ -25,12 +26,17 @@ export default function SeniorDashboard() {
   const [history, setHistory] = useState([])
   const [teamClosedToday, setTeamClosedToday] = useState([])
   const [customers, setCustomers] = useState({})
-  const [selectedId, setSelectedId] = useState(null)
   const [tab, setTab] = useState('escalations')
   // New-message-arrived indicator per conversation id, cleared once opened.
   const [unreadIds, setUnreadIds] = useState(() => new Set())
-  const selectedIdRef = useRef(null)
-  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+  const {
+    openIds, minimizedIds, activeId,
+    openWindow, closeWindow, focusWindow, toggleMinimize, getCascadeIndex,
+  } = useChatWindows()
+  const visibleIdsRef = useRef(new Set())
+  useEffect(() => {
+    visibleIdsRef.current = new Set(openIds.filter((id) => !minimizedIds.has(id)))
+  }, [openIds, minimizedIds])
 
   const clearUnread = useCallback((id) => {
     setUnreadIds((prev) => {
@@ -98,7 +104,7 @@ export default function SeniorDashboard() {
       .on('broadcast', { event: 'new_message' }, (payload) => {
         const m = payload.payload
         if (m.sender_id === profile.id) return
-        if (m.conversation_id === selectedIdRef.current) return
+        if (visibleIdsRef.current.has(m.conversation_id)) return
         setUnreadIds((prev) => {
           if (prev.has(m.conversation_id)) return prev
           const next = new Set(prev)
@@ -150,13 +156,13 @@ export default function SeniorDashboard() {
     }
   }, [myTickets, profile])
 
-  const allVisible = useMemo(
-    () => [...escalations, ...myTickets, ...history, ...teamClosedToday],
-    [escalations, myTickets, history, teamClosedToday]
-  )
-  const selected = allVisible.find((t) => t.id === selectedId) ?? null
-  const category = categories.find((c) => c.id === selected?.category_id)
-  const customer = customers[selected?.client_id]
+  const ticketsById = useMemo(() => {
+    const map = new Map()
+    for (const t of [...escalations, ...myTickets, ...history, ...teamClosedToday]) map.set(t.id, t)
+    return map
+  }, [escalations, myTickets, history, teamClosedToday])
+  const categoriesById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories])
+  const customersById = useMemo(() => new Map(Object.entries(customers)), [customers])
 
   const kpis = [
     { label: 'Escalations open', value: escalations.length },
@@ -211,25 +217,25 @@ export default function SeniorDashboard() {
               <EscalationList
                 tickets={escalations}
                 categories={categories}
-                selectedId={selectedId}
-                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
+                selectedId={activeId}
+                onSelect={(t) => { openWindow(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'mine' && (
               <MyTicketsList
                 tickets={myTickets}
                 categories={categories}
-                selectedId={selectedId}
+                selectedId={activeId}
                 unreadIds={unreadIds}
-                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
+                onSelect={(t) => { openWindow(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'history' && (
               <TicketHistoryList
                 tickets={history}
                 categories={categories}
-                selectedId={selectedId}
-                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
+                selectedId={activeId}
+                onSelect={(t) => { openWindow(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'reports' && (
@@ -238,15 +244,20 @@ export default function SeniorDashboard() {
           </div>
         </aside>
 
-        <main className="flex-1 overflow-hidden">
-          <TicketDetailPanel
-            ticket={selected}
-            category={category}
-            customer={customer}
-            onChanged={loadAll}
-            showQaReview
-          />
-        </main>
+        <ChatWorkspace
+          ticketsById={ticketsById}
+          categoriesById={categoriesById}
+          customersById={customersById}
+          openIds={openIds}
+          minimizedIds={minimizedIds}
+          activeId={activeId}
+          getCascadeIndex={getCascadeIndex}
+          onFocus={focusWindow}
+          onClose={closeWindow}
+          onMinimize={toggleMinimize}
+          onChanged={loadAll}
+          showQaReview
+        />
       </div>
     </div>
   )

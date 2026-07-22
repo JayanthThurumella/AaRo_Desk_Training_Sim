@@ -5,11 +5,12 @@ import PresenceSwitcher from '../../components/PresenceSwitcher'
 import NotificationsBell from '../../components/NotificationsBell'
 import QueueList from '../../components/QueueList'
 import MyTicketsList from '../../components/MyTicketsList'
-import TicketDetailPanel from '../../components/TicketDetailPanel'
 import TicketHistoryList from '../../components/TicketHistoryList'
 import PerformanceReports from '../../components/PerformanceReports'
 import KpiStrip from '../../components/KpiStrip'
 import KpiHelpButton from '../../components/KpiHelpButton'
+import ChatWorkspace from '../../components/ChatWorkspace'
+import useChatWindows from '../../hooks/useChatWindows'
 import {
   averageHandleTime, averageFirstResponseTime, firstContactResolutionRate,
   averageCsat, formatDuration, formatPercent, isActiveWork,
@@ -32,14 +33,20 @@ export default function AgentDashboard() {
   const [handedOff, setHandedOff] = useState([])
   const [closedToday, setClosedToday] = useState([])
   const [customers, setCustomers] = useState({})
-  const [selectedId, setSelectedId] = useState(null)
   const [tab, setTab] = useState('queue')
   const [statusUpdated, setStatusUpdated] = useState(false)
   // New-message-arrived indicator per conversation id, shown as a badge in
-  // the sidebar lists while a ticket isn't the one currently open.
+  // the sidebar lists while a ticket isn't currently open in a visible
+  // (non-minimized) window.
   const [unreadIds, setUnreadIds] = useState(() => new Set())
-  const selectedIdRef = useRef(null)
-  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+  const {
+    openIds, minimizedIds, activeId,
+    openWindow, closeWindow, focusWindow, toggleMinimize, getCascadeIndex,
+  } = useChatWindows()
+  const visibleIdsRef = useRef(new Set())
+  useEffect(() => {
+    visibleIdsRef.current = new Set(openIds.filter((id) => !minimizedIds.has(id)))
+  }, [openIds, minimizedIds])
 
   const clearUnread = useCallback((id) => {
     setUnreadIds((prev) => {
@@ -106,7 +113,7 @@ export default function AgentDashboard() {
       .on('broadcast', { event: 'new_message' }, (payload) => {
         const m = payload.payload
         if (m.sender_id === profile.id) return
-        if (m.conversation_id === selectedIdRef.current) return
+        if (visibleIdsRef.current.has(m.conversation_id)) return
         setUnreadIds((prev) => {
           if (prev.has(m.conversation_id)) return prev
           const next = new Set(prev)
@@ -167,12 +174,13 @@ export default function AgentDashboard() {
     [history, handedOff]
   )
 
-  const selected = useMemo(
-    () => [...queue, ...myTickets, ...historyTickets, ...closedToday].find((t) => t.id === selectedId) ?? null,
-    [queue, myTickets, historyTickets, closedToday, selectedId]
-  )
-  const category = categories.find((c) => c.id === selected?.category_id)
-  const customer = customers[selected?.client_id]
+  const ticketsById = useMemo(() => {
+    const map = new Map()
+    for (const t of [...queue, ...myTickets, ...historyTickets, ...closedToday]) map.set(t.id, t)
+    return map
+  }, [queue, myTickets, historyTickets, closedToday])
+  const categoriesById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories])
+  const customersById = useMemo(() => new Map(Object.entries(customers)), [customers])
 
   const kpis = [
     { label: 'Open now', value: myTickets.filter(isActiveWork).length },
@@ -236,11 +244,11 @@ export default function AgentDashboard() {
                   canClaim
                   onClaimed={(id) => {
                     loadAll()
-                    setSelectedId(id)  // auto‑open the claimed ticket
+                    openWindow(id)  // auto‑open the claimed ticket in its own window
                     clearUnread(id)
                   }}
-                  selectedId={selectedId}
-                  onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
+                  selectedId={activeId}
+                  onSelect={(t) => { openWindow(t.id); clearUnread(t.id) }}
                 />
               )
             )}
@@ -248,17 +256,17 @@ export default function AgentDashboard() {
               <MyTicketsList
                 tickets={myTickets}
                 categories={categories}
-                selectedId={selectedId}
+                selectedId={activeId}
                 unreadIds={unreadIds}
-                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
+                onSelect={(t) => { openWindow(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'history' && (
               <TicketHistoryList
                 tickets={historyTickets}
                 categories={categories}
-                selectedId={selectedId}
-                onSelect={(t) => { setSelectedId(t.id); clearUnread(t.id) }}
+                selectedId={activeId}
+                onSelect={(t) => { openWindow(t.id); clearUnread(t.id) }}
               />
             )}
             {tab === 'reports' && (
@@ -267,9 +275,19 @@ export default function AgentDashboard() {
           </div>
         </aside>
 
-        <main className="flex-1 overflow-hidden">
-          <TicketDetailPanel ticket={selected} category={category} customer={customer} onChanged={loadAll} />
-        </main>
+        <ChatWorkspace
+          ticketsById={ticketsById}
+          categoriesById={categoriesById}
+          customersById={customersById}
+          openIds={openIds}
+          minimizedIds={minimizedIds}
+          activeId={activeId}
+          getCascadeIndex={getCascadeIndex}
+          onFocus={focusWindow}
+          onClose={closeWindow}
+          onMinimize={toggleMinimize}
+          onChanged={loadAll}
+        />
       </div>
     </div>
   )

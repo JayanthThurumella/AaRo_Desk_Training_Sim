@@ -37,6 +37,39 @@ export function handleTimeSeconds(ticket) {
   return Math.max(total - (ticket.hold_total_seconds ?? 0), 0)
 }
 
+/**
+ * Handle time in seconds for a single assigned user's own working period only.
+ *
+ * A ticket's overall handleTimeSeconds() spans its entire lifetime, which is
+ * fine for aggregate reporting, but it is the wrong number to show a specific
+ * agent or senior agent: once a ticket is escalated, the original agent's
+ * clock must stop at the moment of escalation (it must never keep climbing
+ * just because a senior agent is still working the ticket), and the senior
+ * agent's clock must not start until they actually claim the escalation.
+ * The two periods never overlap and neither is ever combined with the other.
+ *
+ * `latestEscalation` is the most recent row from the `escalations` table for
+ * this conversation — { created_at, resolved_at, to_agent_id } — or
+ * null/undefined if the ticket has never been escalated.
+ */
+export function viewerHandleTimeSeconds(ticket, viewerId, latestEscalation) {
+  const wasEscalated = !!latestEscalation
+  const end = ticket.closed_at ?? new Date().toISOString()
+
+  const isSeniorViewer = wasEscalated && latestEscalation.to_agent_id === viewerId
+  if (isSeniorViewer) {
+    // Senior agent's own timer: starts only once they claimed the escalation.
+    if (!latestEscalation.resolved_at) return null
+    return Math.max(diffSeconds(latestEscalation.resolved_at, end), 0)
+  }
+
+  // Original agent's own timer: stops the instant the ticket is escalated,
+  // regardless of how long the senior agent has held it since.
+  if (!ticket.claimed_at) return null
+  const agentEnd = wasEscalated ? latestEscalation.created_at : end
+  return Math.max(diffSeconds(ticket.claimed_at, agentEnd), 0)
+}
+
 /** Resolution time in seconds: queue entry to close. Null while still open. */
 export function resolutionSeconds(ticket) {
   if (!ticket.started_at || !ticket.closed_at) return null
@@ -54,8 +87,11 @@ export function averageWaitTime(tickets) {
   return average(times)
 }
 
+// SLA limits are configured in seconds (see issue_categories.response_sla_seconds /
+// resolution_sla_seconds — supabase/10_sla_seconds_config.sql), which lets a category be
+// configured with sub-minute precision instead of only minutes/hours.
 export function isResponseSlaBreached(ticket, category) {
-  const limitSec = (category?.response_sla_minutes ?? 0) * 60
+  const limitSec = category?.response_sla_seconds ?? 0
   if (!limitSec) return false
   const rt = firstResponseSeconds(ticket)
   if (rt !== null) return rt > limitSec
@@ -64,7 +100,7 @@ export function isResponseSlaBreached(ticket, category) {
 }
 
 export function isResolutionSlaBreached(ticket, category) {
-  const limitSec = (category?.resolution_sla_minutes ?? 0) * 60
+  const limitSec = category?.resolution_sla_seconds ?? 0
   if (!limitSec) return false
   const rt = resolutionSeconds(ticket)
   if (rt !== null) return rt > limitSec
@@ -74,7 +110,7 @@ export function isResolutionSlaBreached(ticket, category) {
 
 /** True once a queue ticket is within `warnFraction` of breaching response SLA (default 80%). */
 export function isSlaAtRisk(ticket, category, warnFraction = 0.8) {
-  const limitSec = (category?.response_sla_minutes ?? 0) * 60
+  const limitSec = category?.response_sla_seconds ?? 0
   if (!limitSec || !ticket.started_at || ticket.first_response_at) return false
   const elapsed = diffSeconds(ticket.started_at, new Date().toISOString())
   return elapsed > limitSec * warnFraction && elapsed <= limitSec

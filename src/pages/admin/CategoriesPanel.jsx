@@ -3,15 +3,36 @@ import { supabase } from '../../lib/supabaseClient'
 import ConfirmDialog from '../../components/ConfirmDialog'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent']
-const EMPTY_FORM = { name: '', response_sla_minutes: 5, resolution_sla_minutes: 60, default_priority: 'medium' }
+const EMPTY_FORM = { name: '', response_sla_seconds: 5 * 60, resolution_sla_seconds: 60 * 60, default_priority: 'medium' }
+
+// SLA values are always stored (and sent to the backend) in seconds — these
+// units just control how the number is entered/displayed in this form.
+const SLA_UNITS = { seconds: 1, minutes: 60, hours: 3600 }
+
+function secondsToUnit(seconds, unit) {
+  return Math.round((seconds / SLA_UNITS[unit]) * 100) / 100
+}
+
+function unitToSeconds(value, unit) {
+  return Math.max(1, Math.round(Number(value) * SLA_UNITS[unit]))
+}
 
 export default function CategoriesPanel() {
   const [categories, setCategories] = useState([])
   const [savingId, setSavingId] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [formUnits, setFormUnits] = useState({ response: 'minutes', resolution: 'minutes' })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  // Per-category, per-field display unit (seconds/minutes/hours) — purely a
+  // display/input preference, the stored value is always in seconds.
+  const [rowUnits, setRowUnits] = useState({})
+
+  const unitFor = (categoryId, field) => rowUnits[categoryId]?.[field] ?? 'minutes'
+  const setUnitFor = (categoryId, field, unit) => {
+    setRowUnits((prev) => ({ ...prev, [categoryId]: { ...prev[categoryId], [field]: unit } }))
+  }
 
   const load = async () => {
     const { data } = await supabase.from('issue_categories').select('*').order('name')
@@ -36,14 +57,15 @@ export default function CategoriesPanel() {
     setCreateError(null)
     const { error } = await supabase.from('issue_categories').insert({
       name: form.name.trim(),
-      response_sla_minutes: form.response_sla_minutes,
-      resolution_sla_minutes: form.resolution_sla_minutes,
+      response_sla_seconds: form.response_sla_seconds,
+      resolution_sla_seconds: form.resolution_sla_seconds,
       default_priority: form.default_priority,
     })
     setCreating(false)
     if (error) setCreateError(error.message)
     else {
       setForm(EMPTY_FORM)
+      setFormUnits({ response: 'minutes', resolution: 'minutes' })
       load()
     }
   }
@@ -61,6 +83,7 @@ export default function CategoriesPanel() {
       <h2 className="mb-1 text-base font-semibold text-[var(--ink)]">Categories & SLAs</h2>
       <p className="mb-4 text-sm text-[var(--muted)]">
         Response SLA starts when a ticket enters the human queue. Resolution SLA runs until close.
+        Enter each SLA in whichever unit is most convenient — seconds, minutes, or hours.
       </p>
 
       <div className="mb-4 rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
@@ -75,15 +98,19 @@ export default function CategoriesPanel() {
               className="w-48 rounded-md border border-[var(--line)] bg-[var(--paper)] px-2 py-1.5 text-sm"
             />
           </label>
-          <LabeledInput
-            label="Response SLA (min)"
-            value={form.response_sla_minutes}
-            onChange={(v) => setForm((f) => ({ ...f, response_sla_minutes: v }))}
+          <SlaInput
+            label="Response SLA"
+            seconds={form.response_sla_seconds}
+            unit={formUnits.response}
+            onUnitChange={(u) => setFormUnits((f) => ({ ...f, response: u }))}
+            onSecondsChange={(s) => setForm((f) => ({ ...f, response_sla_seconds: s }))}
           />
-          <LabeledInput
-            label="Resolution SLA (min)"
-            value={form.resolution_sla_minutes}
-            onChange={(v) => setForm((f) => ({ ...f, resolution_sla_minutes: v }))}
+          <SlaInput
+            label="Resolution SLA"
+            seconds={form.resolution_sla_seconds}
+            unit={formUnits.resolution}
+            onUnitChange={(u) => setFormUnits((f) => ({ ...f, resolution: u }))}
+            onSecondsChange={(s) => setForm((f) => ({ ...f, resolution_sla_seconds: s }))}
           />
           <label className="flex flex-col text-xs">
             <span className="mb-1 font-medium text-[var(--muted)]">Default priority</span>
@@ -114,17 +141,21 @@ export default function CategoriesPanel() {
               <p className="text-[11px] text-[var(--muted)]">{c.active ? 'Active' : 'Disabled'}</p>
             </div>
 
-            <LabeledInput
-              label="Response SLA (min)"
-              value={c.response_sla_minutes}
+            <SlaInput
+              label="Response SLA"
+              seconds={c.response_sla_seconds}
+              unit={unitFor(c.id, 'response')}
               disabled={savingId === c.id}
-              onChange={(v) => update(c.id, { response_sla_minutes: v })}
+              onUnitChange={(u) => setUnitFor(c.id, 'response', u)}
+              onSecondsChange={(s) => update(c.id, { response_sla_seconds: s })}
             />
-            <LabeledInput
-              label="Resolution SLA (min)"
-              value={c.resolution_sla_minutes}
+            <SlaInput
+              label="Resolution SLA"
+              seconds={c.resolution_sla_seconds}
+              unit={unitFor(c.id, 'resolution')}
               disabled={savingId === c.id}
-              onChange={(v) => update(c.id, { resolution_sla_minutes: v })}
+              onUnitChange={(u) => setUnitFor(c.id, 'resolution', u)}
+              onSecondsChange={(s) => update(c.id, { resolution_sla_seconds: s })}
             />
 
             <label className="flex flex-col text-xs">
@@ -173,18 +204,32 @@ export default function CategoriesPanel() {
   )
 }
 
-function LabeledInput({ label, value, onChange, disabled }) {
+function SlaInput({ label, seconds, unit, onUnitChange, onSecondsChange, disabled }) {
+  const displayValue = secondsToUnit(seconds ?? 0, unit)
   return (
-    <label className="flex flex-col text-xs">
+    <div className="flex flex-col text-xs">
       <span className="mb-1 font-medium text-[var(--muted)]">{label}</span>
-      <input
-        type="number"
-        min={1}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-24 rounded-md border border-[var(--line)] bg-[var(--paper)] px-2 py-1 font-mono-data"
-      />
-    </label>
+      <div className="flex gap-1">
+        <input
+          type="number"
+          min={unit === 'seconds' ? 1 : 0.01}
+          step={unit === 'seconds' ? 1 : 0.01}
+          value={displayValue}
+          disabled={disabled}
+          onChange={(e) => onSecondsChange(unitToSeconds(e.target.value, unit))}
+          className="w-20 rounded-md border border-[var(--line)] bg-[var(--paper)] px-2 py-1 font-mono-data"
+        />
+        <select
+          value={unit}
+          disabled={disabled}
+          onChange={(e) => onUnitChange(e.target.value)}
+          className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-1 py-1 text-[11px]"
+        >
+          <option value="seconds">sec</option>
+          <option value="minutes">min</option>
+          <option value="hours">hr</option>
+        </select>
+      </div>
+    </div>
   )
 }
