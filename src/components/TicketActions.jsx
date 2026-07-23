@@ -49,12 +49,12 @@ export default function TicketActions({ ticket, onChanged }) {
 
   if (CLOSED.includes(ticket.status)) {
     return (
-      <div className="border-t border-[var(--line)] p-3">
-        {error && <p className="mb-2 text-xs text-[var(--status-escalated)]">{error}</p>}
+      <div className="border-t border-[var(--line)] p-2">
+        {error && <p className="mb-1.5 text-xs text-[var(--status-escalated)]">{error}</p>}
         <button
           onClick={() => call('reopen_conversation', { p_conversation_id: ticket.id })}
           disabled={busy}
-          className="w-full rounded-lg border border-[var(--line)] py-2 text-sm font-medium text-[var(--ink)] hover:border-[var(--brand-bright)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-lg border border-[var(--line)] py-1.5 text-xs font-medium text-[var(--ink)] hover:border-[var(--brand-bright)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reopen ticket
         </button>
@@ -67,12 +67,12 @@ export default function TicketActions({ ticket, onChanged }) {
     // queue — it was transferred to this agent, and the conversation already has history.
     const wasTransferred = !!ticket.first_response_at
     return (
-      <div className="border-t border-[var(--line)] p-3 flex gap-2">
+      <div className="border-t border-[var(--line)] p-2 flex gap-2">
         {error && <p className="text-xs text-[var(--status-escalated)]">{error}</p>}
         <button
           onClick={() => call('reject_conversation', { p_conversation_id: ticket.id })}
           disabled={busy}
-          className="flex-1 rounded-lg border border-[var(--line)] py-2 text-sm font-medium text-[var(--muted)] hover:border-[var(--status-escalated)] hover:text-[var(--status-escalated)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 rounded-lg border border-[var(--line)] py-1.5 text-xs font-medium text-[var(--muted)] hover:border-[var(--status-escalated)] hover:text-[var(--status-escalated)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reject back to queue
         </button>
@@ -87,12 +87,12 @@ export default function TicketActions({ ticket, onChanged }) {
 
   if (ticket.status === 'escalated' && !isMyEscalation) {
     return (
-      <div className="border-t border-[var(--line)] p-3">
+      <div className="border-t border-[var(--line)] p-2">
         {profile.role === 'senior_agent' && (
           <button
             onClick={() => call('take_ownership', { p_conversation_id: ticket.id })}
             disabled={busy}
-            className="w-full rounded-lg bg-[var(--brand)] py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-lg bg-[var(--brand)] py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             Take ownership
           </button>
@@ -104,10 +104,10 @@ export default function TicketActions({ ticket, onChanged }) {
   if (!canAct) return null
 
   return (
-    <div className="border-t border-[var(--line)] p-3">
-      {error && <p className="mb-2 text-xs text-[var(--status-escalated)]">{error}</p>}
+    <div className="border-t border-[var(--line)] p-2">
+      {error && <p className="mb-1.5 text-xs text-[var(--status-escalated)]">{error}</p>}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {ticket.status === 'active' && (
           <ActionBtn onClick={() => call('hold_conversation', { p_conversation_id: ticket.id })} disabled={busy}>Hold</ActionBtn>
         )}
@@ -235,7 +235,7 @@ function ActionBtn({ children, onClick, tone, primary, disabled }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${
+      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${
         primary
           ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
           : toneClasses[tone] ?? 'border-[var(--line)] text-[var(--ink)] hover:border-[var(--brand-bright)]'

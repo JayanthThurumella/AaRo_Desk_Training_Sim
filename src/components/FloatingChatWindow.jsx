@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-const MIN_WIDTH = 360
-const MIN_HEIGHT = 380
-const DEFAULT_WIDTH = 460
-const DEFAULT_HEIGHT = 600
+const MIN_WIDTH = 380
+const MIN_HEIGHT = 420
+// Bumped up from the original 460x600 so the chat area is genuinely usable on
+// smaller desktop screens without immediately having to resize/maximize —
+// more messages visible at once, less scrolling.
+const DEFAULT_WIDTH = 540
+const DEFAULT_HEIGHT = 680
 const MARGIN = 12
 const CASCADE_STEP = 28
 const CASCADE_WRAP = 8
@@ -172,7 +175,7 @@ export default function FloatingChatWindow({
       <div
         onMouseDown={startDrag}
         onDoubleClick={toggleMaximize}
-        className={`flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--paper)] px-3 py-2 ${
+        className={`flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--paper)] px-2.5 py-1.5 ${
           maximized ? 'cursor-default' : 'cursor-move'
         }`}
       >

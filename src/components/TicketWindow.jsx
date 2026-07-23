@@ -96,7 +96,7 @@ export default function TicketWindow({ ticket, category, onChanged, showQaReview
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-[var(--line)] px-3 py-1.5">
+      <div className="shrink-0 border-b border-[var(--line)] px-2.5 py-1">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <PriorityBadge priority={ticket.priority} />
@@ -116,7 +116,7 @@ export default function TicketWindow({ ticket, category, onChanged, showQaReview
         </div>
 
         {showDetails && (
-          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono-data text-[var(--muted)]">
+          <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono-data text-[var(--muted)]">
             <span>First Response: {formatDuration(firstResponseSeconds(ticket))}</span>
             <span>Claim Wait: {formatDuration(waitSeconds(ticket))}</span>
             {CLOSED.includes(ticket.status) && (
@@ -156,6 +156,8 @@ export default function TicketWindow({ ticket, category, onChanged, showQaReview
             readOnly={CLOSED.includes(ticket.status) || isHandedOff}
             emptyLabel={CLOSED.includes(ticket.status) ? 'No messages were exchanged.' : 'Say hello to get started.'}
             hideHeader
+            compact
+            smartScroll
           />
         ) : tab === 'notes' ? (
           <InternalNotes conversationId={ticket.id} />
@@ -179,7 +181,7 @@ function TabBtn({ active, children, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 border-b-2 -mb-px ${
+      className={`px-2.5 py-1 border-b-2 -mb-px ${
         active ? 'border-[var(--brand)] text-[var(--ink)]' : 'border-transparent text-[var(--muted)]'
       }`}
     >
